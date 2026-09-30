@@ -44,7 +44,8 @@ python -c "import sys; sys.path.insert(0,'.'); from env.flappy_env import Flappy
 Repo files: `game/` (game core + renderer), `env/flappy_env.py` (Gymnasium
 env), `train/train_ppo.py`, `distill.py`, `dagger.py`, `finetune.py` (training
 stages), `play.py` / `eval_scores.py` / `score_final.py` (evaluate & demos),
-`sb3_io.py` (checkpoint-load workaround). `runs/` and `videos/` are gitignored.
+`sb3_io.py` (checkpoint-load workaround). `runs/` is gitignored; pretrained
+weights under `model/` are committed via Git LFS.
 
 ## Usage Guide
 
@@ -61,9 +62,9 @@ Step 4: fine-tuned pixel policy                 can exceed the teacher
 | Step | Produces | What to expect (our run) |
 |---|---|---|
 | 1. warmup expert | `runs/quick` | 3 min, learns basics (2–6) |
-| 2. train teacher | `runs/vec10m/eval/best_model.zip` | ~1 h, avg ≥ 30 |
-| 3. DAgger distill | `runs/distill/dagger_v1.pt` | ~25 min CPU, **avg 236/game** (75/433/145/291) |
-| 4. PPO fine-tune | `runs/run8_ft/eval/best_model.zip` | ~30 min GPU, comparable to student |
+| 2. train teacher | `runs/vec10m` → bundled as `model/expert_vector/best_model.zip` | ~1 h, avg ≥ 30 |
+| 3. DAgger distill | `model/student_dagger/dagger_v1.pt` | ~25 min CPU, **avg 236/game** (75/433/145/291) |
+| 4. PPO fine-tune | `model/finetuned/best_model.zip` | ~30 min GPU, comparable to student |
 
 For reference, training the same pixel CNN directly (Steps skip) never made
 it past 13 in our experiments.
@@ -102,10 +103,12 @@ correction is why plain cloning only reached avg 5 here):
 
 ```bash
 python dagger.py --expert runs/vec10m/eval/best_model.zip \
-                 --init runs/distill/pixel_cnn_v2.pt \
-                 --out runs/distill/dagger_v1.pt \
+                 --init model/bc_pixel/pixel_cnn_v2.pt \
+                 --out model/student_dagger/dagger_v1.pt \
                  --rounds 3 --steps 150000 --device cpu
 ```
+Skipping step 2? Use `--expert model/expert_vector/best_model.zip` instead —
+the bundled LFS teacher works just as well.
 Each round prints `round N eval scores ... avg` — expect a strong upward trend.
 
 ### Step 4: Pixel PPO fine-tune (GPU, ~30 min)
@@ -116,7 +119,7 @@ validation lines, and if any is missing the run will collapse (all failure
 modes and fixes are documented in the code):
 
 ```bash
-python finetune.py --init runs/distill/dagger_v1.pt \
+python finetune.py --init model/student_dagger/dagger_v1.pt \
                    --timesteps 3000000 --n-envs 16 --device cuda --exp-name run8_ft
 ```
 
@@ -131,15 +134,34 @@ policy unfrozen at 200000 steps, value explained_variance=0.5+
 
 ```bash
 python finetune.py --resume runs/run8_ft/checkpoints/$(ls -t runs/run8_ft/checkpoints | head -1) \
-       --init runs/distill/dagger_v1.pt     # train_ppo.py accepts --resume the same way
+       --init model/student_dagger/dagger_v1.pt     # train_ppo.py accepts --resume the same way
+```
+
+### Skip straight to the results — pretrained weights (Git LFS)
+
+No need to retrain to watch what works. All four stages described above are
+committed under `model/` (via Git LFS; `git lfs install` once before cloning):
+
+| File | Stage | What it does |
+|---|---|---|
+| `model/expert_vector/best_model.zip` | 2 · vector teacher | plays via its 7-dim state, great for `--obs vector` demos |
+| `model/bc_pixel/pixel_cnn_v2.pt` | 2.5 · plain BC attempt | avg ≈ 5 — kept to show why naive cloning fails |
+| `model/student_dagger/dagger_v1.pt` | 3 · DAgger student | **avg 236/game** — the pixel AI this project produces |
+| `model/finetuned/best_model.zip` | 4 · PPO fine-tune | comparable to the student, occasional longer flights |
+
+```bash
+git lfs install
+python play.py model/student_dagger/dagger_v1.pt --obs dict    # watch the student fly
+python score_final.py model/finetuned/best_model.zip   # prints 10-game avg
 ```
 
 ### Scoring and demos
 
 ```bash
-python eval_scores.py runs/run8_ft --obs pixels --episodes 10   # true avg score
-python play.py runs/run8_ft/eval/best_model.zip                 # watch it fly
-python play.py runs/distill/dagger_v1.pt --obs dict --headless --episodes 5
+# paths under model/ work after a fresh clone (Git LFS); retrain to refresh them
+python score_final.py model/expert_vector/best_model.zip      # teacher, true avg
+python score_final.py model/student_dagger/dagger_v1.pt       # student, true avg
+python play.py  model/student_dagger/dagger_v1.pt --obs dict  # watch the AI fly
 # demo videos are saved under videos/
 ```
 
