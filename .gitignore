@@ -1,0 +1,10 @@
+# training output (large, regenerable)
+runs/
+videos/
+
+# python
+__pycache__/
+*.pyc
+
+# session scratch
+code_progress.txt

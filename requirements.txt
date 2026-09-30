@@ -1,0 +1,6 @@
+# installed into conda env `mlenv` (2026-09-28), existing packages untouched
+pygame==2.6.1
+gymnasium==1.3.0
+stable-baselines3==2.9.0
+tensorboard==2.21.0
+# already present (do not reinstall): torch>=2.13+cu13x, numpy>=2.3, opencv-python
